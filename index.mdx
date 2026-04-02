@@ -1,97 +1,87 @@
 ---
-title: "Introduction"
-description: "Welcome to the new home for your documentation"
+title: "Harden-Runner"
+description: "Runtime security for GitHub Actions — monitor network egress, detect supply chain attacks, and protect your CI/CD pipelines."
 ---
 
-## Setting up
+Harden-Runner is a CI/CD security agent that works like an EDR (Endpoint Detection & Response) for GitHub Actions runners. It monitors outbound network traffic, file system changes, and process activity — correlating every event to the exact workflow step that caused it.
 
-Get your documentation site up and running in minutes.
+Trusted by over **11,000 open-source projects and enterprises**, including Microsoft, Google, CISA, and Kubernetes, Harden-Runner secures more than **18 million CI/CD workflow runs every week**.
 
-<Card
-  title="Start here"
-  icon="rocket"
-  href="/quickstart"
-  horizontal
->
-  Follow our three step quickstart guide.
-</Card>
-
-## Make it yours
-
-Design a docs site that looks great and empowers your users.
-
-<Columns cols={2}>
-  <Card
-    title="Edit locally"
-    icon="pen-to-square"
-    href="/development"
-  >
-    Edit your docs locally and preview them in real time.
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Add Harden-Runner to your workflow and get security insights in minutes.
   </Card>
-  <Card
-    title="Customize your site"
-    icon="palette"
-    href="/essentials/settings"
-  >
-    Customize the design and colors of your site to match your brand.
+  <Card title="How It Works" icon="shield-halved" href="/how-it-works">
+    Understand the architecture behind GitHub-hosted and self-hosted runner protection.
   </Card>
-    <Card
-    title="Set up navigation"
-    icon="map"
-    href="/essentials/navigation"
-  >
-    Organize your docs to help users find what they need and succeed with your product.
+  <Card title="Action Inputs Reference" icon="sliders" href="/reference/action-inputs">
+    Full reference for all configuration inputs supported by the action.
   </Card>
-  <Card
-    title="API documentation"
-    icon="terminal"
-    href="/api-reference/introduction"
-  >
-    Auto-generate API documentation from OpenAPI specifications.
+  <Card title="Community vs Enterprise" icon="chart-bar" href="/reference/community-vs-enterprise">
+    Compare free and paid tier features to choose the right plan.
   </Card>
-</Columns>
+</CardGroup>
 
-## Create beautiful pages
+## Why Harden-Runner?
 
-Everything you need to create world-class documentation.
+CI/CD runners have access to your most sensitive secrets — cloud credentials, signing keys, deployment tokens. Yet they're typically ephemeral, unmonitored, and invisible to traditional security tools.
 
-<Columns cols={2}>
-  <Card
-    title="Write with MDX"
-    icon="pen-fancy"
-    href="/essentials/markdown"
-  >
-    Use MDX to style your docs pages.
-  </Card>
-  <Card
-    title="Code samples"
-    icon="code"
-    href="/essentials/code"
-  >
-    Add sample code to demonstrate how to use your product.
-  </Card>
-  <Card
-    title="Images"
-    icon="image"
-    href="/essentials/images"
-  >
-    Display images and other media.
-  </Card>
-  <Card
-    title="Reusable snippets"
-    icon="recycle"
-    href="/essentials/reusable-snippets"
-  >
-    Write once and reuse across your docs.
-  </Card>
-</Columns>
+Harden-Runner fills this gap:
 
-## Need inspiration?
+- **Block exfiltration**: Restrict outbound traffic to only the domains your workflow needs
+- **Detect tampering**: Catch unauthorized source code or binary modifications during builds
+- **Spot anomalies**: Identify unexpected network calls, new processes, or unusual file writes
+- **Minimize permissions**: Determine the minimum `GITHUB_TOKEN` permissions your workflow actually uses
 
-<Card
-  title="See complete examples"
-  icon="stars"
-  href="https://mintlify.com/customers"
->
-  Browse our showcase of exceptional documentation sites.
-</Card>
+<CardGroup cols={2}>
+  <Card title="Egress Policy" icon="network-wired" href="/configuration/egress-policy">
+    Configure audit or block mode for outbound network traffic.
+  </Card>
+  <Card title="Allowed Endpoints" icon="list-check" href="/configuration/allowed-endpoints">
+    Define the domains your workflow is permitted to reach.
+  </Card>
+  <Card title="Network Monitoring" icon="magnifying-glass-chart" href="/monitoring/network-egress">
+    View outbound connections correlated to each workflow step.
+  </Card>
+  <Card title="Runner Environments" icon="server" href="/environments/compatibility">
+    See supported runner types: GitHub-hosted, self-hosted VMs, and ARC.
+  </Card>
+</CardGroup>
+
+## Real-world detections
+
+Harden-Runner has detected real supply chain attacks in the wild:
+
+- **[tj-actions/changed-files compromise](https://www.stepsecurity.io/blog/harden-runner-detection-tj-actions-changed-files-action-is-compromised)** (CVE-2025-30066) — detected before widespread impact
+- **NX Build System malware** — caught data-stealing code in a popular build tool
+- **CNCF Backstage Sha1-Hulud attack** — identified anomalous network behavior in real time
+- **Google Flank CI/CD attack** — correlated suspicious traffic to the compromised step
+
+<Note>
+  Harden-Runner is open source (Apache 2.0) for public repositories. Enterprise features — including private repo support, self-hosted runners, and GitHub Checks integration — are available with a [StepSecurity subscription](https://www.stepsecurity.io/pricing).
+</Note>
+
+## Get started in 2 minutes
+
+<Steps>
+  <Step title="Add Harden-Runner to your workflow">
+    Insert the action as the **first step** in any job:
+
+    ```yaml .github/workflows/your-workflow.yml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+    ```
+  </Step>
+  <Step title="Run your workflow">
+    Push your changes and let the workflow run. Harden-Runner installs a lightweight agent on the runner and begins monitoring.
+  </Step>
+  <Step title="Review security insights">
+    After the job completes, a link appears in the workflow logs and job summary. Click it to see every outbound network call, file write, and process execution — mapped to the exact step that triggered it.
+  </Step>
+  <Step title="Switch to block mode">
+    Once you've reviewed your baseline, update your workflow to use `egress-policy: block` with an `allowed-endpoints` list to prevent unauthorized traffic.
+  </Step>
+</Steps>

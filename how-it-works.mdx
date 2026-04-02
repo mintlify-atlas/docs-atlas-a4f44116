@@ -1,0 +1,164 @@
+---
+title: "How it works"
+description: "Architecture and internals of Harden-Runner — from agent installation through monitoring and policy enforcement across GitHub-hosted, self-hosted, and ARC runner environments."
+---
+
+Harden-Runner is implemented as a GitHub Action with three execution phases: a **pre-step** that sets up the agent, a **main step** that prints the insights link, and a **post step** that adds the job summary. The monitoring itself is performed by a separate agent process that runs alongside your workflow steps.
+
+<Note>
+  The community tier agent for Linux is open source and available at [github.com/step-security/agent](https://github.com/step-security/agent). The eBPF-based enterprise agent for Linux, and the agents for Windows and macOS, are closed source.
+</Note>
+
+## Lifecycle phases
+
+<Steps>
+  <Step title="Pre-step: agent setup (setup.ts)">
+    The pre-step runs before any of your workflow steps. It:
+
+    1. Reads all action inputs (`egress-policy`, `allowed-endpoints`, `disable-sudo`, etc.) and builds a `Configuration` object
+    2. If a `policy` name is provided, fetches the policy from the StepSecurity API using an OIDC ID token and merges it with the local configuration
+    3. Contacts the StepSecurity monitor endpoint at `agent.api.stepsecurity.io/v1` to register the run and receive a one-time key and the runner IP address
+    4. Downloads the appropriate agent binary for the platform, verifies its checksum, and installs it
+    5. Writes the configuration as JSON to the agent's working directory and starts the agent as a system service
+
+    The correlation ID generated in this phase is stored in `GITHUB_STATE` and used later to construct the insights URL and fetch the job summary.
+  </Step>
+
+  <Step title="Main step: insights link (index.ts)">
+    The main step runs in the normal step position in your job. If telemetry is enabled (the default), it prints the link to the security insights dashboard:
+
+    ```
+    View security insights and recommended policy at:
+    https://app.stepsecurity.io/github/<owner>/<repo>/actions/runs/<run-id>
+    ```
+
+    This step is intentionally minimal — the agent is already running at this point and monitoring all subsequent steps.
+  </Step>
+
+  <Step title="Post step: job summary (post/index.ts)">
+    After all job steps complete, the post step fetches the job markdown summary from the StepSecurity API using the correlation ID and writes it to the GitHub Actions job summary. This is what produces the summary card visible at the bottom of a workflow run page.
+  </Step>
+</Steps>
+
+## Runner environment support
+
+Harden-Runner behaves differently depending on the runner environment it detects. The pre-step (`setup.ts`) checks for several conditions to determine which installation path to take.
+
+<Tabs>
+  <Tab title="GitHub-hosted Linux">
+    For GitHub-hosted Linux runners, Harden-Runner installs a binary agent as a `systemd` service:
+
+    1. The pre-step calls `POST agent.api.stepsecurity.io/v1/github/<repo>/actions/runs/<run-id>/monitor` to register the job and receive a one-time key
+    2. It then checks whether TLS inspection is active on the runner by calling `isTLSEnabled()`
+    3. Based on the TLS result and CPU architecture, it downloads one of two agent variants:
+       - **TLS enabled**: downloads the eBPF-based agent from `step-security/agent-ebpf` (supports both `amd64` and `arm64`)
+       - **No TLS**: downloads the open-source agent from `step-security/agent` for `amd64` only; `arm64` is skipped entirely with a message that ARM runners are not supported in the community tier
+    4. The agent binary is copied to `/home/agent/agent`, configured via `/home/agent/agent.json`, and started with `sudo service agent start` using a bundled `agent.service` unit file
+    5. The pre-step waits up to ~9 seconds for `/home/agent/agent.status` to appear, confirming the agent started successfully
+
+    <Note>
+      ARM64 runners are not supported in the community tier. If `isTLS` is false and the architecture is `arm64`, agent installation is skipped.
+    </Note>
+  </Tab>
+
+  <Tab title="GitHub-hosted Windows">
+    For GitHub-hosted Windows runners:
+
+    1. The Windows agent binary (`agent.exe`) is downloaded from `step-security/agent-releases` and placed in `C:\agent\`
+    2. Configuration is written to `C:\agent\config.json`
+    3. The agent process is spawned with `child_process.spawn` in detached mode with its output redirected to `C:\agent\agent.log`
+    4. The PID is saved to `C:\agent\agent.pid`
+
+    Windows ARM64 runners are not supported.
+  </Tab>
+
+  <Tab title="GitHub-hosted macOS">
+    For GitHub-hosted macOS runners:
+
+    1. The working directory `/opt/step-security` is created
+    2. Configuration is written to `/opt/step-security/agent.json`
+    3. A platform-specific installer package is downloaded from `step-security/agent-releases`, verified by checksum, and extracted
+    4. The `Installer` binary is copied to `/opt/step-security/Installer` and run with `sudo` to complete the installation
+    5. The pre-step returns immediately after installation — there is no status-file polling on macOS
+
+    macOS agents support audit mode only.
+  </Tab>
+
+  <Tab title="Self-hosted VMs">
+    For self-hosted VM runners (for example, EC2 instances running your own runner image):
+
+    1. The pre-step detects that the runner is not GitHub-hosted by checking `RUNNER_ENVIRONMENT === "github-hosted"` — if this variable is absent or has any other value, the runner is treated as self-hosted
+    2. It logs `"This job is running on a self-hosted runner."` and returns without installing anything
+    3. The Harden-Runner agent is expected to already be present in the runner image (for example, baked into an AMI)
+
+    For self-hosted VM runners, you install the agent directly into your runner image rather than having the action install it at job start. This means **no workflow changes are required** to enable audit mode.
+
+    If `egress-policy: block` is set in the workflow, `sendAllowedEndpoints()` communicates the allowed-endpoints list to the already-running agent before returning.
+  </Tab>
+
+  <Tab title="ARC (Actions Runner Controller)">
+    For Kubernetes-based ARC runners, Harden-Runner uses a DaemonSet approach with eBPF:
+
+    1. The pre-step detects ARC by checking for the `GITHUB_ACTIONS_RUNNER_EXTRA_USER_AGENT` environment variable containing `actions-runner-controller/`, or by detecting the `/__w` workdir and `KUBERNETES_PORT` environment variable (secondary pod detection)
+    2. It logs `"Workflow is currently being executed in ARC based runner."` and returns without installing anything
+    3. The ARC Harden Runner DaemonSet must be deployed separately to your Kubernetes cluster — it uses eBPF at the node level to monitor all runner pods
+
+    If `egress-policy: block` is set, `sendAllowedEndpoints()` encodes each allowed endpoint in base64 and writes it to stdout in a format the DaemonSet picks up (`step_policy_endpoint_<base64>`), followed by a `step_policy_apply_<count>` marker.
+
+    ARC Harden Runner is Linux only and is **not open source**.
+  </Tab>
+
+  <Tab title="Custom VM images">
+    If you build custom VM images for GitHub-hosted runners and pre-install the Harden-Runner agent in the image, set the environment variable `STEP_SECURITY_HARDEN_RUNNER=true` in the image.
+
+    When the pre-step detects this variable on a GitHub-hosted runner, it logs `"This job is running on a custom VM image with Harden Runner installed."` and skips the download and installation flow.
+
+    If `egress-policy: block` is set, the action communicates the allowed-endpoints list to the pre-installed agent before returning.
+  </Tab>
+</Tabs>
+
+## StepSecurity API interaction
+
+The action communicates with two StepSecurity endpoints:
+
+| Endpoint | Purpose |
+|---|---|
+| `agent.api.stepsecurity.io/v1` | Monitor registration, policy fetch, job summary fetch |
+| `prod.app-api.stepsecurity.io/v1` | Telemetry |
+
+The monitor registration call (`POST .../monitor`) returns the runner IP address, a one-time key used to authenticate the agent, and a flag indicating whether monitoring is active for the repository. If the API returns HTTP 409, the action logs that Harden-Runner is temporarily unavailable and skips installation.
+
+The web dashboard URL is always `https://app.stepsecurity.io`.
+
+## Block mode and cache endpoint handling
+
+When `egress-policy: block` is set, the pre-step needs to ensure the GitHub Actions cache service is reachable (otherwise actions that use `@actions/cache` will fail). The pre-step:
+
+1. Saves a marker file to the cache to trigger a cache service lookup
+2. Detects which cache service version is in use (`v1` or `v2`)
+3. Resolves the cache service hostname and appends it to `allowed-endpoints` automatically before the agent enforces the blocklist
+
+If the cache URL cannot be resolved, the pre-step falls back to `egress-policy: audit` and logs the reason.
+
+## TLS inspection detection
+
+The `isTLSEnabled()` function probes the runner's network environment to detect whether outbound TLS traffic is being intercepted. This result determines which agent variant to install on Linux:
+
+- **TLS interception detected** → installs the eBPF-based agent (`step-security/agent-ebpf`), which operates at the kernel level and is not affected by TLS interception
+- **No TLS interception** → installs the open-source agent (`step-security/agent`) for amd64, or skips installation for arm64
+
+## Skipping Harden-Runner for a repository
+
+You can set a GitHub repository custom property named `skip-harden-runner` to `"true"` to skip all Harden-Runner processing for that repository. Both the pre-step and main step check for this property at startup and return immediately if it is set.
+
+## Environment compatibility matrix
+
+| Environment | Audit mode | Block mode | Workflow changes needed |
+|---|---|---|---|
+| GitHub-hosted Linux | Full support | Full support | Yes — add the action |
+| GitHub-hosted Windows | Audit only | Not supported | Yes — add the action |
+| GitHub-hosted macOS | Audit only | Not supported | Yes — add the action |
+| Self-hosted VM runners | Full support | Full support | No — agent baked into image |
+| Self-hosted bare-metal | Full support | Full support | No — agent installed as service |
+| ARC (Kubernetes) | Full support | Full support | No — DaemonSet deployment |
+| RunsOn runners | Full support | Full support | No — pre-integrated |

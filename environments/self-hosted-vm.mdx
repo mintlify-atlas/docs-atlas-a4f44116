@@ -1,0 +1,109 @@
+---
+title: "Self-Hosted VM Runners"
+description: "Deploying Harden-Runner on self-hosted virtual machine runners such as EC2 instances and Azure VMs."
+---
+
+Self-hosted VM runners are virtual machines that you manage and register with GitHub Actions. Harden-Runner supports full runtime security — both audit mode and block mode — on self-hosted VMs running Linux or Windows.
+
+<Note>
+  Support for self-hosted runners is an **Enterprise** feature and requires a StepSecurity subscription. For details, see the [community vs. enterprise comparison](/reference/community-vs-enterprise).
+</Note>
+
+## How it works
+
+For self-hosted VMs, you pre-install the Harden-Runner agent directly into your runner image (for example, an AWS AMI or Azure VM image). Because the agent is already running when a workflow job starts, **you do not need to make any changes to your workflow files to enable audit mode**.
+
+For block mode, you still add the Harden-Runner action to the workflow and specify `egress-policy: block` with an `allowed-endpoints` list. The action communicates the allowlist to the already-running agent.
+
+The action detects that it is running on a self-hosted runner by checking the `RUNNER_ENVIRONMENT` environment variable. If the value is not `github-hosted`, the runner is treated as self-hosted.
+
+## Supported environments
+
+| OS | Architecture | Audit mode | Block mode |
+|----|--------------|------------|------------|
+| Linux | `amd64` | Yes | Yes |
+| Windows | `x64` | Yes | Yes |
+
+## Deployment approaches
+
+<CardGroup cols={2}>
+  <Card title="Bake agent into runner image" icon="layer-group">
+    Install the Harden-Runner agent into your base AMI or VM image at build time. All runners launched from that image start with the agent already running. No workflow changes are needed for audit mode.
+  </Card>
+  <Card title="Install agent as a service" icon="gear">
+    Install the agent directly on an existing VM and configure it to run as a system service. Suitable for bare-metal servers or long-lived VMs where image rebuilds are impractical.
+  </Card>
+</CardGroup>
+
+## Deploying via runner image
+
+The recommended approach for cloud-based self-hosted runners (EC2, Azure VMs, GCP instances) is to include the agent in your runner image.
+
+<Steps>
+  <Step title="Contact StepSecurity">
+    Reach out to [support@stepsecurity.io](mailto:support@stepsecurity.io) or visit [stepsecurity.io](https://www.stepsecurity.io) to obtain the self-hosted VM agent package and installation instructions for your platform.
+  </Step>
+  <Step title="Install the agent in your base image">
+    Add the agent installation to your image build script (for example, a Packer template or cloud-init script). The agent installs as a system service and starts automatically when the VM boots.
+
+    After installation, the agent writes a status file at the following path depending on the OS:
+    - **Linux**: `/home/agent/agent.status`
+    - **Windows**: `C:\agent\agent.status`
+  </Step>
+  <Step title="Build and publish the image">
+    Build your updated AMI or VM image and publish it to your cloud provider. Register your GitHub Actions runners using this new image.
+  </Step>
+  <Step title="Verify the agent is running">
+    Start a test workflow on your self-hosted runner. The workflow log will include the message:
+
+    ```
+    This job is running on a self-hosted runner.
+    ```
+
+    Security events are visible in the StepSecurity dashboard without any action step in your workflow.
+  </Step>
+  <Step title="Enable block mode (optional)">
+    To enforce an outbound allowlist, add the Harden-Runner action to your workflow as the first step and set `egress-policy: block` with the endpoints your job requires:
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+    ```
+
+    The action encodes the endpoint list and sends it to the running agent, which then enforces the policy for the duration of the job.
+  </Step>
+</Steps>
+
+## How self-hosted detection works
+
+The action determines whether a runner is GitHub-hosted or self-hosted by inspecting the `RUNNER_ENVIRONMENT` environment variable at runtime (`tls-inspect.ts`):
+
+```typescript
+export function isGithubHosted() {
+  const runnerEnvironment = process.env.RUNNER_ENVIRONMENT || "";
+  return runnerEnvironment === "github-hosted";
+}
+```
+
+GitHub sets `RUNNER_ENVIRONMENT=github-hosted` on all runners it manages. On self-hosted VMs, this variable is either absent or set to a different value, so `isGithubHosted()` returns `false` and the action skips the agent download and installation step.
+
+## Block mode on self-hosted runners
+
+When `egress-policy: block` is configured, the action calls `sendAllowedEndpoints()`, which:
+
+1. Splits the `allowed-endpoints` input on whitespace.
+2. Base64-encodes each endpoint.
+3. Echoes a `step_policy_endpoint_<encoded>` message that the agent reads from the runner's output stream.
+4. Echoes a final `step_policy_apply_<count>` message to trigger policy enforcement.
+
+The agent applies the allowlist for the duration of the job and restores the default policy when the job completes.
+
+<Tip>
+  For more information on self-hosted VM runner support, see the [StepSecurity blog post on CI/CD security for self-hosted VM runners](https://www.stepsecurity.io/blog/ci-cd-security-for-self-hosted-vm-runners).
+</Tip>

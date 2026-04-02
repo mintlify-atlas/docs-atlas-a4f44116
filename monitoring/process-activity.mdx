@@ -1,0 +1,71 @@
+---
+title: "Process Activity Monitoring"
+description: "Track every process executed during your CI/CD workflow. Correlate process executions to workflow steps and detect unexpected binaries, exfiltration tools, and crypto miners."
+---
+
+Every command that runs in your CI/CD job is a potential security event. A compromised action might spawn a reverse shell, a malicious dependency might launch a crypto miner, or an attacker who gained access to your runner might run data exfiltration tools — all while the rest of your workflow appears to complete normally.
+
+Harden-Runner's process activity monitoring gives you a full audit trail of every process executed during the build, correlated to the workflow step that launched it.
+
+<Note>
+  Process activity monitoring is an **Enterprise** feature. Upgrade to a StepSecurity Enterprise subscription to enable process names, arguments, and process tree navigation for your jobs.
+</Note>
+
+## What is captured
+
+For every process that executes during a job, Harden-Runner records:
+
+- The process name and full argument list
+- The process ID (PID) and parent PID
+- The workflow step that was active when the process started
+- Any outbound network connections opened by the process
+
+The same log structure used for network event correlation — `ip address:port {addr}, domain: {domain}, pid: {pid}, process: {proc}` — links process activity directly to network calls. This means you can trace a suspicious outbound connection back to the exact process and step that initiated it.
+
+## Navigating the process tree
+
+The StepSecurity dashboard lets you explore the full process hierarchy for a job run. You can:
+
+- Expand any step to see the processes it spawned
+- Follow parent-child relationships to understand how processes were launched
+- Identify unexpected child processes spawned by trusted tools
+
+This is particularly useful when a compromised dependency uses a legitimate process (such as `sh` or `python`) as an intermediary, making the malicious activity harder to spot in flat process lists.
+
+## Detecting suspicious process patterns
+
+<CardGroup cols={2}>
+  <Card title="Unexpected binaries" icon="triangle-exclamation">
+    Tools like `nmap`, `masscan`, `nc` (netcat), or `socat` have no legitimate role in most CI/CD builds. Their presence indicates reconnaissance or an active intrusion attempt.
+  </Card>
+  <Card title="Crypto miners" icon="microchip">
+    Processes such as `xmrig` or anonymous mining clients spin up on compromised runners to use your compute. They are often launched as background processes with obscured names.
+  </Card>
+  <Card title="Exfiltration tools" icon="arrow-up-from-bracket">
+    `curl`, `wget`, or language runtimes making outbound calls to unusual destinations — especially combined with reading from environment variables — are a strong signal of secret exfiltration.
+  </Card>
+  <Card title="Shell spawned by unexpected parent" icon="terminal">
+    A `bash` or `sh` process whose parent is a package manager, test runner, or build tool (rather than the runner itself) suggests code execution via a supply chain compromise.
+  </Card>
+</CardGroup>
+
+## Real-world examples
+
+### Unexpected Microsoft Defender installation
+
+Harden-Runner detected an unexpected Microsoft Defender installation on GitHub-hosted Ubuntu runners. The process activity log showed the Defender agent being installed and started during a routine workflow run — a change in runner behavior that had not been announced and was invisible to teams relying only on workflow-level logs.
+
+By correlating the process execution to the specific step and comparing it against the baseline, Harden-Runner flagged the anomaly. This led to a broader investigation and public disclosure by StepSecurity.
+
+### api.ipify.org calls
+
+Multiple customers saw their workflows making outbound calls to `api.ipify.org`, a service that returns the caller's public IP address. This is a common technique used by malware to discover the external IP of a compromised host before communicating with a command-and-control server.
+
+Process monitoring revealed that these calls were made by a specific process spawned during a build step. Correlating the process name with the network event let teams identify the compromised dependency responsible.
+
+## How to use process monitoring
+
+1. **Review the process list for each job run** in the StepSecurity dashboard. Look for process names you do not recognize.
+2. **Check process arguments** — a known binary run with unusual flags (for example, `python -c "import socket; ..."`) is a red flag even if the binary itself is expected.
+3. **Correlate processes to network events** — any process making outbound connections to domains not in your baseline warrants investigation.
+4. **Compare against your baseline** — processes that appear in one run but not in the historical baseline for that job trigger an anomaly detection alert.

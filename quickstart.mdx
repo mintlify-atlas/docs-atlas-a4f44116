@@ -1,80 +1,164 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: "Quick start"
+description: "Get security monitoring running in your GitHub Actions workflow in minutes."
 ---
 
-## Get started in three steps
+This guide walks you through adding Harden-Runner to an existing workflow, reviewing the security insights it produces, and switching from monitoring-only (audit) mode to active enforcement (block) mode.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+- A GitHub repository with at least one GitHub Actions workflow
+- Permission to edit workflow files in the repository
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
-    
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
-    
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+<Tabs>
+  <Tab title="Linux">
+    Linux runners have full support: network egress monitoring, file monitoring, process monitoring, and block mode.
+  </Tab>
+  <Tab title="Windows">
+    Windows runners support audit mode. Network events are captured and visible in the security insights dashboard.
+  </Tab>
+  <Tab title="macOS">
+    macOS runners support audit mode. The agent is installed via a platform-specific installer package.
+  </Tab>
+</Tabs>
 
-### Step 2: Deploy your changes
+## Setup
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
-    
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+<Steps>
+  <Step title="Add Harden-Runner as the first step in your job">
+    Open your workflow file (`.github/workflows/<your-workflow>.yml`) and add Harden-Runner as the **first step** inside the job you want to monitor. Starting with `egress-policy: audit` is recommended — it records all outbound traffic without blocking anything.
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+    ```yaml
+    jobs:
+      build:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Harden Runner
+            uses: step-security/harden-runner@v2
+            with:
+              egress-policy: audit
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+          - name: Checkout
+            uses: actions/checkout@v4
 
-### Step 3: Go live
+          # ... rest of your steps
+    ```
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+    <Tip>
+      You can automate this step by pasting your workflow YAML into the [StepSecurity secure-workflow tool](https://app.stepsecurity.io/secure-workflow). It adds Harden-Runner to every job and generates an `allowed-endpoints` list based on the actions you use.
+    </Tip>
+  </Step>
+
+  <Step title="Run the workflow and find the insights link">
+    Commit and push your change to trigger the workflow. Once the job completes:
+
+    1. Open the workflow run in GitHub Actions.
+    2. Expand the **Harden Runner** step logs.
+    3. Look for a line that reads **"View security insights and recommended policy at:"** followed by a URL to `app.stepsecurity.io`.
+
+    The same link also appears in the **job summary** at the bottom of the workflow run page.
+  </Step>
+
+  <Step title="Review the security insights">
+    Click the link to open the security insights dashboard. You will see:
+
+    - **Network events** — every outbound network connection made during the job, correlated to the specific step that made it, including the domain, IP address, process name, and PID
+    - **File events** — file writes tracked during the job (enterprise tier)
+    - **Process events** — processes executed and their arguments (enterprise tier)
+
+    Review the network events to understand what your workflow actually calls. This becomes the basis for your allowed-endpoints list.
+
+    <Note>
+      For public repositories, insights are available immediately with no account required. For private repositories, a [StepSecurity subscription](https://www.stepsecurity.io/pricing) is required to enable monitoring.
+    </Note>
+  </Step>
+
+  <Step title="Switch to block mode with an allowed-endpoints list">
+    Once you understand your workflow's network behavior, switch from `audit` to `block` and add an `allowed-endpoints` list. This prevents any outbound connection not on the list from succeeding.
+
+    ```yaml
+    jobs:
+      build:
+        runs-on: ubuntu-latest
+        steps:
+          - name: Harden Runner
+            uses: step-security/harden-runner@v2
+            with:
+              egress-policy: block
+              allowed-endpoints: >
+                github.com:443
+                api.github.com:443
+                objects.githubusercontent.com:443
+                registry.npmjs.org:443
+
+          - name: Checkout
+            uses: actions/checkout@v4
+
+          - name: Install dependencies
+            run: npm ci
+
+          # ... rest of your steps
+    ```
+
+    The `allowed-endpoints` field accepts a space- or newline-separated list of `hostname:port` entries. Ports are required.
+
+    <Warning>
+      If you set `egress-policy: block` with an empty `allowed-endpoints` list, **no outbound traffic will be allowed** for any step in the job. This will break most workflows. Always review audit mode results first and build your allowed-endpoints list before switching to block mode.
+    </Warning>
+  </Step>
+</Steps>
+
+## Common allowed-endpoints patterns
+
+The endpoints your workflow needs depend on what it does, but most workflows use some combination of the following:
+
+```yaml
+with:
+  egress-policy: block
+  allowed-endpoints: >
+    github.com:443
+    api.github.com:443
+    objects.githubusercontent.com:443
+    codeload.github.com:443
+    uploads.github.com:443
+    registry.npmjs.org:443
+    pypi.org:443
+    files.pythonhosted.org:443
+    proxy.golang.org:443
+    sum.golang.org:443
+    storage.googleapis.com:443
+```
+
+The security insights dashboard shows the exact domains your workflow calls, making it straightforward to build this list from observed behavior rather than guessing.
+
+## Using a policy from the policy store
+
+Instead of configuring inputs directly in each workflow, you can store a named policy in the StepSecurity API and reference it by name:
+
+```yaml
+- name: Harden Runner
+  uses: step-security/harden-runner@v2
+  with:
+    policy: my-org-policy
+```
+
+<Note>
+  Using the `policy` input requires `id-token: write` permission in your job, as it uses OIDC to fetch the policy from the StepSecurity API.
+</Note>
 
 ## Next steps
 
-Now that you have your docs running, explore these key features:
-
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="How it works" icon="shield-halved" href="/how-it-works">
+    Learn about the agent architecture, systemd installation, and runner environment support.
+  </Card>
+  <Card title="Action inputs reference" icon="sliders" href="/reference/action-inputs">
+    Full reference for `egress-policy`, `allowed-endpoints`, `disable-sudo`, and all other inputs.
+  </Card>
+  <Card title="Community vs enterprise" icon="chart-bar" href="/reference/community-vs-enterprise">
+    See what is available in the free tier versus the enterprise tier.
+  </Card>
+  <Card title="Runner environments" icon="server" href="/environments/compatibility">
+    Compatibility details for GitHub-hosted, self-hosted VM, and ARC runners.
+  </Card>
 </CardGroup>
-
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>

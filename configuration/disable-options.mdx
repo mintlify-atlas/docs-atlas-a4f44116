@@ -1,0 +1,73 @@
+---
+title: "Disable Options"
+description: "Granular controls to restrict runner capabilities such as sudo access, container operations, file monitoring, and telemetry."
+---
+
+Harden-Runner provides several `disable-*` inputs that let you restrict specific runner capabilities. You can combine any of these options in a single step.
+
+## Inputs
+
+<ParamField path="disable-sudo-and-containers" type="boolean" default="false">
+  Disables both `sudo` access and container operations (e.g., `docker run`) for the runner account for the duration of the job. Use this option to prevent privilege escalation and container escapes in your workflow.
+</ParamField>
+
+<ParamField path="disable-sudo" type="boolean" default="false" deprecated>
+  Disables `sudo` access for the runner account. Use `disable-sudo-and-containers` instead.
+</ParamField>
+
+<ParamField path="disable-file-monitoring" type="boolean" default="false">
+  Disables file write monitoring. By default, Harden-Runner tracks files written during the job and reports them to StepSecurity. Set this to `true` if you want to opt out of file write tracking.
+</ParamField>
+
+<ParamField path="disable-telemetry" type="boolean" default="false">
+  Disables sending telemetry to the StepSecurity API. Telemetry includes network events and job metadata used to generate security insights in the dashboard. This option only takes effect when `egress-policy` is set to `block`.
+</ParamField>
+
+## Notes
+
+<Note>
+  `disable-sudo` is deprecated. Use `disable-sudo-and-containers` to disable both sudo access and container operations together. `disable-sudo` remains supported for backward compatibility but may be removed in a future release.
+</Note>
+
+<Warning>
+  `disable-telemetry: true` has no effect when `egress-policy` is set to `audit`. Telemetry is only suppressed when `egress-policy: block` is active, because in audit mode all outbound traffic — including telemetry — is permitted and not intercepted.
+</Warning>
+
+## When to use each option
+
+| Option | Typical use case |
+|---|---|
+| `disable-sudo-and-containers` | Prevent steps from escalating privileges or launching containers; useful for supply chain hardening in untrusted dependency workflows |
+| `disable-sudo` | Legacy equivalent of `disable-sudo-and-containers` for sudo-only restriction |
+| `disable-file-monitoring` | Reduce noise in file event reports when a job intentionally writes many files (e.g., build artifact generation) |
+| `disable-telemetry` | Air-gapped or privacy-sensitive environments that use `egress-policy: block` and cannot reach the StepSecurity API |
+
+## Example
+
+The following configuration disables sudo and container access, and turns off telemetry while keeping network egress in block mode:
+
+```yaml
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: block
+      allowed-endpoints: >
+        api.github.com:443
+        github.com:443
+        registry.npmjs.org:443
+      disable-sudo-and-containers: true
+      disable-telemetry: true
+```
+
+You can combine `disable-file-monitoring` with any other disable option:
+
+```yaml
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: audit
+      disable-sudo-and-containers: true
+      disable-file-monitoring: true
+```

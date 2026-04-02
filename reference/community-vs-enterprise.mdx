@@ -1,0 +1,75 @@
+---
+title: "Community vs Enterprise"
+description: "Compare free and paid tier features to choose the right plan for your needs."
+---
+
+Harden-Runner is available in two tiers. The **Community** tier is free and covers public repositories on GitHub-hosted runners. The **Enterprise** tier adds support for private repositories, self-hosted runners, and deeper security visibility.
+
+<Note>
+  You can try Enterprise features at no cost by installing the [StepSecurity Actions Security GitHub App](https://github.com/apps/stepsecurity-actions-security). The app starts a free trial that enables all Enterprise capabilities for your organization.
+</Note>
+
+## Feature comparison
+
+| Feature | Community | Enterprise |
+|---|:---:|:---:|
+| CI/CD-aware event correlation (network, file, process per step) | ✓ | ✓ |
+| Automated baseline creation per job | ✓ | ✓ |
+| Anomaly detection based on baseline | ✓ | ✓ |
+| Block network egress with domain allowlist | ✓ | ✓ |
+| Detect modification of source code | ✓ | ✓ |
+| Public repositories | ✓ | ✓ |
+| GitHub-hosted runners (Linux amd64, Windows x64, macOS x64) | ✓ | ✓ |
+| Private repositories | — | ✓ |
+| Self-hosted runners (VMs, bare metal, ARC, RunsOn) | — | ✓ |
+| GitHub Checks integration | — | ✓ |
+| View outbound GitHub API calls at job level | — | ✓ |
+| Determine minimum `GITHUB_TOKEN` permissions | — | ✓ |
+| View name and path of every file written during the build | — | ✓ |
+| View process names, arguments, and process tree | — | ✓ |
+| ARM64 runner support | — | ✓ |
+
+## Tier details
+
+<Columns cols={2}>
+  <Card title="Community" icon="users">
+    **Free, no sign-up required.**
+
+    Add Harden-Runner to any public repository and get immediate security visibility:
+
+    - Map every outbound network call, file write, and process execution to the exact workflow step that triggered it
+    - Automatically build a per-job baseline of expected network activity
+    - Detect anomalous outbound calls that fall outside the baseline
+    - Block unauthorized egress traffic using a domain allowlist
+    - Alert on source code modifications during the CI/CD pipeline
+
+    **Supported environments:** GitHub-hosted runners on Linux (amd64), Windows (x64), and macOS (x64).
+  </Card>
+
+  <Card title="Enterprise" icon="building">
+    **Paid subscription. Includes everything in Community, plus:**
+
+    - Extend monitoring to **private repositories**
+    - Monitor **self-hosted runners** — VM runners, bare-metal servers, ARC clusters, and RunsOn runners — without modifying existing workflows
+    - Use **GitHub Checks** to enforce that baselines have not changed between runs
+    - Inspect outbound GitHub API calls at the job level and receive minimum `GITHUB_TOKEN` permission recommendations
+    - View a complete list of every file written during the build, with process-level correlation
+    - Browse the full process tree with names and arguments to investigate suspicious activity
+    - Run on **ARM64** runners
+
+    **Supported environments:** All Community environments plus self-hosted and ARM64 runners.
+  </Card>
+</Columns>
+
+## Choosing a tier
+
+Start with Community if you are securing public repositories on standard GitHub-hosted runners and want network egress control and anomaly detection without any cost or sign-up.
+
+Upgrade to Enterprise if you need any of the following:
+
+- Monitoring for private repositories
+- Coverage for self-hosted or ARM64 runners
+- GitHub Checks enforcement tied to baseline changes
+- Visibility into file writes, process trees, or GitHub API call analysis
+
+For pricing details, visit [stepsecurity.io/pricing](https://www.stepsecurity.io/pricing).

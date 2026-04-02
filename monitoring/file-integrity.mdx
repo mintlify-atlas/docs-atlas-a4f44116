@@ -1,0 +1,82 @@
+---
+title: "File Integrity Monitoring"
+description: "Detect unauthorized modifications to source code and build artifacts during CI/CD. Harden-Runner monitors the working directory throughout the pipeline and alerts you to unexpected changes."
+---
+
+CI/CD pipelines have write access to your source code and build outputs. A compromised action or dependency can silently modify files — inserting malicious code into your source, tampering with compiled binaries, or altering build scripts before they are signed or published.
+
+Harden-Runner monitors the file system during every job and alerts you when unexpected writes occur to your working directory.
+
+## How it works
+
+The Harden-Runner agent tracks file system writes that occur within the job's working directory (the `GITHUB_WORKSPACE` path). Any file written or modified during the pipeline is recorded and correlated with the workflow step that caused the change.
+
+This lets you answer questions like:
+
+- Did any step modify a source file it wasn't supposed to touch?
+- Were build artifacts written by an unexpected process?
+- Did a third-party action write files outside its expected scope?
+
+## Disabling file monitoring
+
+File monitoring is enabled by default. You can turn it off using the `disable-file-monitoring` input:
+
+```yaml .github/workflows/example.yml
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: audit
+      disable-file-monitoring: true
+```
+
+<Warning>
+  Disabling file monitoring removes your ability to detect unauthorized source code modifications and build artifact tampering. Only disable it if you have a specific compatibility reason and understand the security trade-off.
+</Warning>
+
+## Community vs Enterprise capabilities
+
+<Note>
+  **Community (free)**: Harden-Runner detects and alerts on modifications to source code files in the working directory. You are notified when an unexpected write occurs so you can investigate.
+
+  **Enterprise**: You gain visibility into the name and path of every file written during the build process, along with the ability to correlate each file write with the specific process that performed it. This gives you a complete, auditable record of all file system activity for each job.
+</Note>
+
+## Interpreting file monitoring alerts
+
+When a file modification is detected outside expected write patterns, the event is surfaced in the StepSecurity dashboard alongside the network events for that run. The alert includes:
+
+- The path of the modified file
+- The step during which the modification occurred
+- (Enterprise) The process that wrote the file
+
+### What to look for
+
+| Signal | What it may indicate |
+|--------|---------------------|
+| Source file modified by a non-checkout step | A compromised action injecting code |
+| Build artifact overwritten after the build step | Binary tampering before signing or publishing |
+| Unexpected files written to `.github/workflows/` | Workflow file modification by a malicious dependency |
+| Config files altered mid-pipeline | Credential or secret extraction attempt |
+
+## Use cases
+
+### Detecting compromised actions
+
+Third-party GitHub Actions run with access to your working directory. A malicious or compromised action can read your source code, modify it, and pass the tampered version downstream to your build or release step — all without triggering any network-based detection.
+
+File integrity monitoring catches this by flagging writes to source files that occur during steps where source modification isn't expected.
+
+### Catching build artifact tampering
+
+In a software supply chain attack, an adversary may compromise a build tool or dependency that modifies compiled binaries or packages after they are built. If the tampered artifact is then signed and published, the malicious change is shipped to your users.
+
+Monitoring which files are written — and by which process — lets you verify that your build outputs were produced by the expected tools and not altered in transit.
+
+### Real-world supply chain attack detections
+
+Harden-Runner has detected file-level tampering in real supply chain attacks:
+
+- **tj-actions/changed-files** (CVE-2025-30066): The compromised action executed code on the runner. File monitoring, combined with network monitoring, gave teams a complete picture of what the malicious code touched and exfiltrated.
+- **CNCF Backstage Sha1-Hulud attack**: Anomalous behavior including unexpected file activity was flagged in real time, allowing the project to respond before the compromise spread.
+- **NX Build System compromise**: Data-stealing malware was introduced into a popular build tool. Monitoring file and network activity revealed the full scope of the malicious behavior.

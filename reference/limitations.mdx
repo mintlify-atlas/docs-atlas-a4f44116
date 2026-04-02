@@ -1,0 +1,70 @@
+---
+title: "Known Limitations"
+description: "Current constraints and unsupported configurations for Harden-Runner."
+---
+
+Harden-Runner covers a wide range of runner environments, but there are specific configurations where it is not supported or has reduced functionality. Review these limitations before deploying to a new environment.
+
+<AccordionGroup>
+
+  <Accordion title="GitHub-hosted runner container jobs">
+    Harden-Runner is **not supported** when an entire job runs inside a container using a built-in GitHub-hosted label (such as `ubuntu-latest`). The action requires sudo access on the underlying Ubuntu VM to install and operate its agent. When the whole job runs in a container, that access is unavailable.
+
+    <Warning>
+      If you use the `container:` key at the job level with a standard GitHub-hosted runner label, Harden-Runner will detect the container environment and exit without monitoring the job.
+    </Warning>
+
+    <Note>
+      **Workaround:** Jobs can be monitored when you use a **custom VM image** with GitHub-hosted runners that has the Harden-Runner agent pre-installed. This limitation does not apply to self-hosted runners, where the agent is deployed directly to the runner infrastructure.
+    </Note>
+  </Accordion>
+
+  <Accordion title="ARC runners: Linux only">
+    The Harden-Runner agent for Actions Runner Controller (ARC) runners uses eBPF for monitoring. eBPF is a Linux kernel technology, so only Linux-based ARC jobs are supported.
+
+    <Warning>
+      Windows and macOS ARC jobs are **not supported**.
+    </Warning>
+  </Accordion>
+
+  <Accordion title="ARM64 runners (community tier)">
+    ARM64 runners are not supported in the Harden-Runner community (free) tier. If your workflow runs on an ARM64 GitHub-hosted runner and you are on the community tier, the action will exit without monitoring the job.
+
+    <Note>
+      ARM64 runner support is available in the **Enterprise** tier. See [Community vs Enterprise](/reference/community-vs-enterprise) for details.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Windows ARM runners">
+    Windows ARM runners are not yet supported by Harden-Runner on any tier. Workflows that run on a Windows ARM runner will not be monitored.
+  </Accordion>
+
+  <Accordion title="Private repositories require Enterprise">
+    The community (free) tier supports **public repositories only**. If you add Harden-Runner to a workflow in a private repository without an active Enterprise subscription, runtime security will be disabled and a warning will appear in the job summary.
+
+    <Warning>
+      If your organization has not signed up for a free trial or a paid subscription, monitoring will not be enabled for private repositories even if the action runs without errors.
+    </Warning>
+
+    <Note>
+      Install the [StepSecurity Actions Security GitHub App](https://github.com/apps/stepsecurity-actions-security) to start a free trial and enable private repository support.
+    </Note>
+  </Accordion>
+
+  <Accordion title="Self-hosted runners require Enterprise">
+    Using Harden-Runner on self-hosted runners (VM runners, bare-metal runners, ARC, or RunsOn) requires an **Enterprise** subscription. On the community tier, the action logs that the job is running on a self-hosted runner and exits without installing the monitoring agent.
+  </Accordion>
+
+  <Accordion title="disable-telemetry only effective in block mode">
+    The `disable-telemetry` input is only respected when `egress-policy` is set to `block`. When `egress-policy` is `audit`, telemetry is sent to the StepSecurity API regardless of the `disable-telemetry` value, because outbound traffic is not restricted in audit mode.
+  </Accordion>
+
+  <Accordion title="disable-sudo is deprecated">
+    The `disable-sudo` input is deprecated and will be removed in a future version of the action. It currently remains functional, but you should migrate to `disable-sudo-and-containers`, which provides equivalent behavior and also disables container access.
+
+    <Note>
+      Replace `disable-sudo: true` with `disable-sudo-and-containers: true` in your workflow files.
+    </Note>
+  </Accordion>
+
+</AccordionGroup>

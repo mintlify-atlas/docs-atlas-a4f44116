@@ -1,28 +1,11 @@
 {
-  "$schema": "https://mintlify.com/docs.json",
-  "name": "Harden-Runner",
+  "projectType": "infrastructure",
+  "projectName": "Harden-Runner",
+  "projectDescription": "A GitHub Actions security agent that monitors network egress, file integrity, and process activity on CI/CD runners to detect and prevent supply chain attacks in real-time.",
   "theme": "aspen",
-  "colors": {
-    "primary": "#7337f2",
-    "light": "#bc94dc",
-    "dark": "#8c63fc"
-  },
-  "favicon": "https://media.brand.dev/63712cef-313d-447f-ae89-5a2210c7a866.jpg",
-  "logo": {
-    "light": "https://media.brand.dev/d7aea225-99de-4a3e-9903-6f2f486ef15d.svg",
-    "dark": "https://media.brand.dev/d7aea225-99de-4a3e-9903-6f2f486ef15d.svg"
-  },
-  "navbar": {
-    "primary": {
-      "type": "github",
-      "href": "https://github.com/step-security/harden-runner"
-    }
-  },
-  "footer": {
-    "socials": {
-      "github": "https://github.com/step-security/harden-runner"
-    }
-  },
+  "primaryColor": "#7337f2",
+  "lightColor": "#bc94dc",
+  "darkColor": "#8c63fc",
   "navigation": {
     "tabs": [
       {
@@ -74,5 +57,28 @@
         ]
       }
     ]
-  }
+  },
+  "keyFeatures": [
+    "Network egress filtering with audit and block modes",
+    "Automated baseline creation for outbound network connections",
+    "Real-time anomaly detection for CI/CD workflow runs",
+    "File integrity monitoring during builds",
+    "Process activity monitoring with step-level correlation",
+    "Support for GitHub-hosted and self-hosted runners (Linux, Windows, macOS)",
+    "Actions Runner Controller (ARC) support via eBPF",
+    "Policy store for centralized configuration management",
+    "GITHUB_TOKEN permissions minimization",
+    "CI/CD-aware event correlation mapping activity to exact workflow steps"
+  ],
+  "publicApiSurface": [
+    "egress-policy input (audit | block)",
+    "allowed-endpoints input",
+    "disable-telemetry input",
+    "disable-sudo input",
+    "disable-sudo-and-containers input",
+    "disable-file-monitoring input",
+    "policy input (policy store name)",
+    "token input",
+    "step-security/harden-runner action"
+  ]
 }

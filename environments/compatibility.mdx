@@ -1,0 +1,92 @@
+---
+title: "Compatibility Matrix"
+description: "Supported runner types, operating systems, and feature availability across all Harden-Runner environments."
+---
+
+Harden-Runner works across a range of GitHub Actions runner environments. Use the tables below to understand which modes, deployment methods, and features are available for your runner type.
+
+<Tip>
+  For a detailed breakdown of which features require a paid subscription, see the [community vs. enterprise comparison](/reference/community-vs-enterprise).
+</Tip>
+
+## Environment support
+
+| Environment | Audit mode | Block mode | Deployment method | Workflow changes required |
+|-------------|------------|------------|-------------------|--------------------------|
+| GitHub-hosted Linux | Yes | Yes | Add action to workflow | Yes |
+| GitHub-hosted Windows | Yes | No | Add action to workflow | Yes |
+| GitHub-hosted macOS | Yes | No | Add action to workflow | Yes |
+| Self-hosted VM runners | Yes | Yes | Include agent in runner image | No (audit) / Yes (block) |
+| Self-hosted bare-metal runners | Yes | Yes | Install agent as a service | No (audit) / Yes (block) |
+| Actions Runner Controller (ARC) | Yes | Yes | Deploy as DaemonSet | No (audit) / Yes (block) |
+| RunsOn runners | Yes | Yes | Pre-integrated | No |
+
+<Note>
+  Self-hosted VM runners, bare-metal runners, ARC runners, and RunsOn runners require an **Enterprise** subscription. GitHub-hosted runner support is available in the **Community** (free) tier for public repositories.
+</Note>
+
+## Operating system and architecture support
+
+| OS | Architecture | GitHub-hosted | Self-hosted VM | ARC |
+|----|--------------|:-------------:|:--------------:|:---:|
+| Linux (Ubuntu) | `amd64` | Yes | Yes | Yes |
+| Linux (Ubuntu) | `arm64` | Enterprise only\* | Yes | Yes |
+| Windows | `x64` | Audit only | Yes | No |
+| Windows | `arm64` | Not supported | Not supported | No |
+| macOS | `x64` | Audit only | — | No |
+
+\* On GitHub-hosted Linux ARM64 runners, the community tier is not supported. The enterprise eBPF agent variant supports ARM64.
+
+## Feature availability by tier
+
+| Feature | Community | Enterprise |
+|---------|:---------:|:----------:|
+| Outbound network monitoring | Yes | Yes |
+| Anomaly detection | Yes | Yes |
+| Block mode (network egress) | Yes | Yes |
+| Source code modification detection | Yes | Yes |
+| Full file write path and process visibility | No | Yes |
+| GitHub-hosted runners (public repos) | Yes | Yes |
+| GitHub-hosted runners (private repos) | No | Yes |
+| Self-hosted VM runners | No | Yes |
+| Self-hosted bare-metal runners | No | Yes |
+| Actions Runner Controller (ARC) | No | Yes |
+| RunsOn runners | No | Yes |
+| GitHub Checks integration | No | Yes |
+| Process name and argument visibility | No | Yes |
+| GITHUB_TOKEN permission analysis | No | Yes |
+| ARM64 runner support (GitHub-hosted) | No | Yes |
+
+## Mode support by environment
+
+### Audit mode
+
+All supported environments and operating systems can run in audit mode. In audit mode, outbound connections are logged and reported to the StepSecurity dashboard without being blocked.
+
+For self-hosted runners and ARC, audit mode requires no workflow changes — the agent or DaemonSet monitors the job automatically once deployed to the infrastructure.
+
+### Block mode
+
+Block mode restricts outbound network traffic to the endpoints listed in `allowed-endpoints`. It requires adding the Harden-Runner action to the workflow to communicate the allowlist to the running agent.
+
+Block mode is fully supported on:
+
+- GitHub-hosted Linux runners
+- Self-hosted VM runners (Linux and Windows)
+- Self-hosted bare-metal runners (Linux and Windows)
+- Actions Runner Controller (ARC) — Linux only
+
+Block mode is **not supported** on:
+
+- GitHub-hosted Windows runners
+- GitHub-hosted macOS runners
+
+## Limitations summary
+
+| Limitation | Details |
+|------------|---------|
+| Container jobs (GitHub-hosted) | Not supported when the entire job runs in a container with a built-in runner label. Use a custom VM image to monitor container jobs. |
+| Windows ARM (GitHub-hosted) | Not yet supported. |
+| ARM64 community tier | ARM64 GitHub-hosted runners require an Enterprise subscription. |
+| ARC Windows/macOS | ARC Harden Runner uses eBPF and supports Linux only. |
+| Private repositories | Require an Enterprise subscription. |

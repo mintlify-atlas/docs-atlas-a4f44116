@@ -1,0 +1,129 @@
+---
+title: "Allowed Endpoints"
+description: "Define which domains your workflow can reach when egress policy is set to block."
+---
+
+The `allowed-endpoints` input lists the network destinations your workflow is permitted to contact when `egress-policy` is set to `block`. Any connection attempt to a host not on the list is blocked.
+
+<ParamField path="allowed-endpoints" type="string" default="">
+  Space-separated list of `host:port` pairs. Only used when `egress-policy: block`. Ignored in audit mode.
+</ParamField>
+
+## Format
+
+Each entry is a `domain:port` pair. Separate multiple entries with spaces. You can use YAML's `>` block scalar to write them on separate lines for readability:
+
+```yaml
+with:
+  egress-policy: block
+  allowed-endpoints: >
+    api.github.com:443
+    github.com:443
+    registry.npmjs.org:443
+```
+
+The trailing newline produced by `>` is harmless — Harden-Runner trims whitespace when parsing the list.
+
+## Common GitHub Actions endpoints
+
+Most workflows need at least these endpoints to check out code and interact with GitHub APIs:
+
+| Endpoint | Purpose |
+|---|---|
+| `github.com:443` | Git clone, push, and other Git operations |
+| `api.github.com:443` | GitHub REST API calls |
+| `objects.githubusercontent.com:443` | Downloading release assets |
+| `codeload.github.com:443` | Downloading repository archives |
+
+## Cache host auto-detection
+
+When `egress-policy: block` is active, Harden-Runner automatically discovers the GitHub Actions cache service hostname and appends it to your `allowed-endpoints` list at runtime. You do not need to add the cache host manually.
+
+If the cache host cannot be determined, Harden-Runner falls back to `egress-policy: audit` for that run and logs a warning so you can investigate.
+
+## Package manager examples
+
+Add the relevant endpoints for each package manager your workflow uses.
+
+<CodeGroup>
+
+```yaml npm
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: block
+      allowed-endpoints: >
+        api.github.com:443
+        github.com:443
+        registry.npmjs.org:443
+```
+
+```yaml pip
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: block
+      allowed-endpoints: >
+        api.github.com:443
+        github.com:443
+        files.pythonhosted.org:443
+        pypi.org:443
+```
+
+```yaml maven
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: block
+      allowed-endpoints: >
+        api.github.com:443
+        github.com:443
+        repo.maven.apache.org:443
+        search.maven.org:443
+```
+
+```yaml go
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: block
+      allowed-endpoints: >
+        api.github.com:443
+        github.com:443
+        proxy.golang.org:443
+        sum.golang.org:443
+        storage.googleapis.com:443
+```
+
+</CodeGroup>
+
+## Real-world example
+
+The following configuration is taken directly from the Harden-Runner test workflow:
+
+```yaml
+- name: Harden Runner
+  uses: step-security/harden-runner@v2
+  with:
+    disable-sudo: true
+    egress-policy: audit
+    allowed-endpoints: >
+      api.github.com:443
+      codecov.io:443
+      github.com:443
+      registry.npmjs.org:443
+      storage.googleapis.com:443
+      uploader.codecov.io:443
+```
+
+## Building your allowlist automatically
+
+<Tip>
+  Run your workflow once with `egress-policy: audit`, then open the security insights link printed in the job log. StepSecurity records every outbound connection and generates a recommended `allowed-endpoints` list you can copy directly into your workflow.
+
+  Alternatively, paste your workflow into [app.stepsecurity.io/secure-workflow](https://app.stepsecurity.io/secure-workflow) to receive an automatically configured workflow file.
+</Tip>

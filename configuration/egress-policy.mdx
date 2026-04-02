@@ -1,0 +1,77 @@
+---
+title: "Egress Policy"
+description: "Control outbound network traffic from your CI/CD runners."
+---
+
+The `egress-policy` input determines how Harden-Runner handles outbound network connections made during your workflow job. You can monitor all traffic without blocking it, or enforce an allowlist so that only explicitly permitted destinations can be reached.
+
+<ParamField path="egress-policy" type="string" default="block">
+  Policy for outbound traffic. Accepted values are `audit` and `block`.
+</ParamField>
+
+## Modes
+
+### audit
+
+In audit mode, all outbound traffic is permitted. Harden-Runner intercepts each connection, logs the destination, and reports it to StepSecurity. You can review the recorded network events in the StepSecurity dashboard to understand exactly what your workflow contacts.
+
+Use audit mode to build a baseline before committing to an allowlist.
+
+### block
+
+In block mode, only the endpoints listed in `allowed-endpoints` can be reached. Any connection attempt to a destination not on the list is redirected and blocked. The job continues running, but blocked calls fail from the perspective of the process that made them.
+
+<Warning>
+  If you set `egress-policy: block` and leave `allowed-endpoints` empty, **all** outbound traffic from your job steps is blocked. Ensure you list every external host your workflow needs before enabling block mode.
+</Warning>
+
+## Examples
+
+<Tabs>
+  <Tab title="audit">
+    Start with audit mode to observe outbound connections without disrupting your workflow.
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+    ```
+
+    After the run completes, review the security insights link printed in the workflow log. StepSecurity shows you every outbound connection grouped by step, which you can use to build your `allowed-endpoints` list.
+  </Tab>
+  <Tab title="block">
+    Switch to block mode once you have identified all required endpoints.
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            registry.npmjs.org:443
+    ```
+
+    Any connection attempt to a host not in `allowed-endpoints` is blocked and recorded. The blocked destination appears in the job log with a `❌ Blocked` status.
+  </Tab>
+</Tabs>
+
+## Recommended workflow
+
+<Tip>
+  Run your workflow with `egress-policy: audit` first. Once you have a stable baseline, copy the suggested policy from the StepSecurity dashboard and switch to `egress-policy: block` with the generated `allowed-endpoints` list.
+
+  You can automate this step by pasting your workflow into the [StepSecurity online tool](https://app.stepsecurity.io/secure-workflow), which inserts the correct configuration for you.
+</Tip>
+
+## Validation
+
+If you supply a value other than `audit` or `block`, the action fails the job immediately with the message:
+
+```
+egress-policy must be either audit or block
+```

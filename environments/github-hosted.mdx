@@ -1,0 +1,117 @@
+---
+title: "GitHub-Hosted Runners"
+description: "Using Harden-Runner on GitHub's managed Ubuntu, Windows, and macOS runners."
+---
+
+GitHub-hosted runners are the default runner type on GitHub Actions. When you add Harden-Runner to a workflow that targets a GitHub-hosted runner, the action downloads, verifies, and installs a lightweight security agent on the VM before your job steps execute.
+
+## Supported operating systems
+
+<Tabs>
+  <Tab title="Linux (Ubuntu)">
+    Linux runners have full support for both audit mode and block mode. The action installs the agent as a `systemd` service (`/etc/systemd/system/agent.service`) and starts it before your steps run.
+
+    The specific agent variant installed depends on whether TLS inspection is enabled for your organization:
+
+    - **TLS inspection enabled** — the eBPF-based agent variant (`agent-ebpf`) is downloaded and installed. Both `amd64` and `arm64` architectures are supported with this variant.
+    - **TLS inspection not enabled** — the standard community agent is downloaded. Only `amd64` is supported in this path.
+
+    <Note>
+      ARM64 runners (such as `ubuntu-24.04-arm`) are not supported in the Harden-Runner community tier when TLS inspection is not enabled. You will see the message: "ARM runners are not supported in the Harden-Runner community tier." To use Harden-Runner on ARM64 GitHub-hosted runners, contact StepSecurity about an Enterprise subscription with TLS inspection enabled.
+    </Note>
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+    ```
+  </Tab>
+  <Tab title="Windows">
+    Windows runners support audit mode. The action downloads the Windows agent (`agent.exe`) from GitHub Releases, verifies its checksum, and spawns it as a detached background process. The agent writes its logs to `C:\agent\agent.log` and its PID to `C:\agent\agent.pid`.
+
+    <Note>
+      Windows ARM runners are not yet supported by Harden-Runner.
+    </Note>
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+    ```
+  </Tab>
+  <Tab title="macOS">
+    macOS runners support audit mode. The action downloads a macOS installer package from GitHub Releases, verifies its SHA256 checksum, copies the `Installer` binary to `/opt/step-security/`, and runs it to set up the agent. The agent configuration is written to `/opt/step-security/agent.json`.
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+    ```
+  </Tab>
+</Tabs>
+
+## How the agent is installed
+
+When your workflow runs on a GitHub-hosted runner, Harden-Runner performs the following steps during the `pre` phase of the action, before any of your job steps execute:
+
+1. Checks that the platform is supported (Linux, Windows, or macOS).
+2. Detects whether the job is running inside a container (`isDocker()`). If so, installation is skipped.
+3. Detects whether the runner is GitHub-hosted by checking the `RUNNER_ENVIRONMENT` environment variable for the value `github-hosted`.
+4. Checks whether a custom VM image with the agent pre-installed is in use (`STEP_SECURITY_HARDEN_RUNNER=true`).
+5. Calls the StepSecurity API to register the run and obtain a one-time key.
+6. Downloads the appropriate agent binary from GitHub Releases, verifies the SHA256 checksum, and installs it.
+7. Starts the agent service and waits for a status file to confirm it is running.
+
+The agent binary is always verified against a known checksum before installation. If the checksum does not match, installation is aborted.
+
+## TLS inspection and agent variants (Linux)
+
+On Linux, Harden-Runner queries the StepSecurity API to determine whether TLS inspection is enabled for the repository owner. The result controls which agent variant is installed:
+
+| TLS inspection | Agent variant | Architectures |
+|----------------|---------------|---------------|
+| Enabled        | `agent-ebpf` (enterprise) | `amd64`, `arm64` |
+| Not enabled    | `agent` (community, open source) | `amd64` only |
+
+## Custom VM images
+
+If you build your own GitHub-hosted runner image (for example, using a custom AMI with GitHub's Larger Runners feature) and pre-install the Harden-Runner agent in that image, set the environment variable `STEP_SECURITY_HARDEN_RUNNER=true` in your runner configuration. The action detects this variable and skips the agent installation step, deferring to the already-running agent.
+
+This approach also allows you to monitor container jobs (see limitation below) when using custom VM images.
+
+## Container job limitation
+
+<Warning>
+  Harden-Runner is **not supported** when the entire job runs inside a container using built-in GitHub-hosted runner labels (for example, `ubuntu-latest` with a `container:` block). The agent requires `sudo` access on the Ubuntu VM, which is not available when GitHub manages the container lifecycle directly.
+
+  To monitor container jobs, use a custom VM image with the agent pre-installed and set `STEP_SECURITY_HARDEN_RUNNER=true`.
+</Warning>
+
+## Example workflow
+
+The following example adds Harden-Runner to a workflow as the first step in the job:
+
+```yaml .github/workflows/build.yml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: make build
+```
+
+Start with `egress-policy: audit` to observe outbound traffic. Once you have a stable baseline from the StepSecurity dashboard, switch to `egress-policy: block` and add the required `allowed-endpoints`.

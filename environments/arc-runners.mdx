@@ -1,0 +1,123 @@
+---
+title: "Actions Runner Controller (ARC)"
+description: "Securing Kubernetes-based self-hosted runners with Harden-Runner."
+---
+
+Actions Runner Controller (ARC) is a Kubernetes operator that runs GitHub Actions jobs inside pods on a Kubernetes cluster. Harden-Runner provides runtime security for ARC-based runners through a dedicated DaemonSet that uses eBPF to monitor and control workloads at the kernel level.
+
+<Note>
+  ARC runner support is an **Enterprise** feature. The ARC Harden Runner component is **not open source**. Contact [support@stepsecurity.io](mailto:support@stepsecurity.io) to enable it for your cluster.
+</Note>
+
+## How it works
+
+Unlike GitHub-hosted runners where the action installs an agent at job start, ARC Harden Runner is deployed as a DaemonSet in your Kubernetes cluster. The DaemonSet runs a privileged pod on every node that hosts runner pods. It uses **eBPF** (extended Berkeley Packet Filter) programs loaded into the host kernel to observe and enforce network and process policy for all runner pods on that node.
+
+When a workflow job runs on an ARC runner, Harden-Runner detects the ARC environment and — if block mode is configured — communicates the allowed endpoint list to the DaemonSet via echoed policy messages. The DaemonSet applies the allowlist at the eBPF layer for the duration of the job.
+
+<Warning>
+  ARC Harden Runner uses eBPF, which requires Linux. **Windows and macOS ARC runner jobs are not supported.**
+</Warning>
+
+## ARC runner detection
+
+The action identifies an ARC runner environment by checking two signals (`arc-runner.ts`):
+
+1. **`GITHUB_ACTIONS_RUNNER_EXTRA_USER_AGENT`** — if this environment variable contains the string `actions-runner-controller/`, the runner is treated as an ARC runner.
+2. **Secondary pod detection** — if the `/__w` directory exists on the filesystem **and** the `KUBERNETES_PORT` environment variable is set, the runner is also treated as an ARC runner (this covers runner scale set pods that may not set the user agent).
+
+```typescript
+export function isARCRunner(): boolean {
+  const runnerUserAgent = process.env["GITHUB_ACTIONS_RUNNER_EXTRA_USER_AGENT"];
+
+  let isARC = false;
+
+  if (!runnerUserAgent) {
+    isARC = false;
+  } else {
+    isARC = runnerUserAgent.includes("actions-runner-controller/");
+  }
+
+  return isARC || isSecondaryPod();
+}
+
+function isSecondaryPod(): boolean {
+  const workDir = "/__w";
+  let hasKubeEnv = process.env["KUBERNETES_PORT"] !== undefined;
+  return fs.existsSync(workDir) && hasKubeEnv;
+}
+```
+
+When an ARC runner is detected, the action logs `Workflow is currently being executed in ARC based runner.` and skips the agent download and installation steps. The DaemonSet on the node handles all monitoring.
+
+## Deploying ARC Harden Runner
+
+<Steps>
+  <Step title="Contact StepSecurity">
+    ARC Harden Runner requires an Enterprise subscription. Contact [support@stepsecurity.io](mailto:support@stepsecurity.io) or visit [stepsecurity.io](https://www.stepsecurity.io) to get access to the DaemonSet manifests and configuration.
+  </Step>
+  <Step title="Deploy the DaemonSet to your cluster">
+    Apply the provided Kubernetes manifests to deploy the Harden Runner DaemonSet. The DaemonSet runs a privileged pod on each node in your cluster that hosts ARC runner pods. It loads eBPF programs into the host kernel to monitor outbound network connections and process activity.
+
+    ```bash
+    # Example — use the manifests provided by StepSecurity
+    kubectl apply -f harden-runner-daemonset.yaml
+    ```
+  </Step>
+  <Step title="Add Harden-Runner to your workflows">
+    Add the Harden-Runner action as the first step in each job. The action detects the ARC environment automatically and defers to the DaemonSet.
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+    ```
+  </Step>
+  <Step title="Review security insights">
+    After jobs run, view outbound network connections, file events, and process activity in the StepSecurity dashboard. The link is printed in the workflow log and job summary.
+  </Step>
+  <Step title="Enable block mode (optional)">
+    Switch to `egress-policy: block` and specify the endpoints your job requires. The action encodes the list and echoes `step_policy_endpoint_` messages, which the DaemonSet reads and enforces at the eBPF layer.
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            api.github.com:443
+            github.com:443
+            registry.npmjs.org:443
+    ```
+  </Step>
+</Steps>
+
+## How block mode communicates with the DaemonSet
+
+When `egress-policy: block` is set on an ARC runner, `sendAllowedEndpoints()` runs before the action exits:
+
+1. The `allowed-endpoints` input is split on whitespace into individual `host:port` entries.
+2. Each entry is base64-encoded and echoed as `step_policy_endpoint_<encoded>`.
+3. A final `step_policy_apply_<count>` message is echoed to signal that all endpoints have been sent.
+
+The DaemonSet's eBPF programs monitor the runner pod's stdout for these messages and apply the corresponding network policy immediately.
+
+## Supported configurations
+
+| Feature | ARC support |
+|---------|-------------|
+| Linux jobs | Yes |
+| Windows jobs | No |
+| macOS jobs | No |
+| Audit mode | Yes |
+| Block mode | Yes |
+| Network monitoring | Yes (via eBPF) |
+| File monitoring | Yes (via eBPF) |
+| Process monitoring | Yes (via eBPF) |
+
+<Tip>
+  For a detailed walkthrough of the architecture, see the [StepSecurity blog post introducing Harden Runner for Kubernetes-based self-hosted Actions runners](https://www.stepsecurity.io/blog/introducing-harden-runner-for-kubernetes-based-self-hosted-actions-runners).
+</Tip>

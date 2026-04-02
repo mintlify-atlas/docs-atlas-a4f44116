@@ -1,0 +1,147 @@
+---
+title: "Network Egress Monitoring"
+description: "Monitor and control outbound network connections from your CI/CD runners. Every outbound call is captured and correlated to the exact workflow step that triggered it."
+---
+
+Harden-Runner intercepts every outbound network connection made during a GitHub Actions job and correlates it to the step, job, and workflow run that caused it. This gives you complete visibility into what your CI/CD pipeline is talking to — and the ability to block connections that shouldn't be there.
+
+<Note>
+  Every network event is tied to a specific workflow step — not just the job as a whole. This CI/CD-aware correlation lets you pinpoint exactly which action, script, or tool initiated a given connection, without having to analyze raw system logs.
+</Note>
+
+## How it works
+
+When Harden-Runner starts, it installs a lightweight agent on the runner. The agent intercepts all outbound TCP/UDP traffic and records:
+
+- The destination IP address and port
+- The resolved domain name
+- The process ID (PID) and process name that opened the connection
+- The workflow step that was executing at the time
+
+This data is sent to the StepSecurity API and surfaced in the security insights dashboard.
+
+### Log format
+
+Each captured connection is logged in this format:
+
+```text
+ip address:port {addr}, domain: {domain}, pid: {pid}, process: {proc}
+```
+
+For example:
+
+```text
+ip address:port 140.82.114.4:443, domain: github.com, pid: 1234, process: git
+ip address:port 54.185.253.63:443, domain: example.com, pid: 5678, process: curl
+```
+
+The agent parses this format to build the event table you see in the dashboard. Connections to `*.actions.githubusercontent.com` and `*.blob.core.windows.net` are automatically excluded from the table — these are internal GitHub Actions infrastructure endpoints.
+
+### Status determination
+
+Each connection is assigned a status based on its destination:
+
+| Status | Meaning |
+|--------|---------|
+| `✅ Allowed` | Connection was permitted |
+| `❌ Blocked` | Connection was denied (IP `54.185.253.63` or a domain not on your allowlist in block mode) |
+
+## Viewing network events
+
+After your workflow runs, a link to the security insights dashboard appears in your workflow log and job summary:
+
+```text
+View security insights and recommended policy at:
+https://app.stepsecurity.io/github/{owner}/{repo}/actions/runs/{run_id}
+```
+
+Click the link to open the **Network Events** view. The table shows every outbound connection made during the job, sorted by step. For each event you can see:
+
+- The destination domain and IP address
+- The port and protocol
+- The process that made the connection
+- The workflow step it was correlated to
+- Whether the connection was allowed or blocked
+
+## Audit mode vs block mode
+
+<Tabs>
+  <Tab title="Audit mode">
+    In audit mode, all outbound connections are **permitted and logged**. No traffic is blocked.
+
+    ```yaml .github/workflows/example.yml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+    ```
+
+    Use audit mode to:
+    - Observe which endpoints your workflow legitimately reaches
+    - Build an initial baseline before switching to block mode
+    - Investigate unexpected connections without risking a broken build
+  </Tab>
+  <Tab title="Block mode">
+    In block mode, only connections to domains on your `allowed-endpoints` list are permitted. All other outbound traffic is blocked.
+
+    ```yaml .github/workflows/example.yml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: block
+          allowed-endpoints: >
+            github.com:443
+            api.github.com:443
+            registry.npmjs.org:443
+            objects.githubusercontent.com:443
+    ```
+
+    When a connection is blocked, the destination IP is recorded with the `❌ Blocked` status in the dashboard so you can review it and decide whether to add it to your allowlist.
+
+    <Warning>
+      Setting `egress-policy: block` with an empty `allowed-endpoints` list blocks **all** outbound traffic for job steps, including calls to GitHub APIs. Always specify at minimum `github.com:443` and `api.github.com:443` unless you explicitly intend to prevent all network access.
+    </Warning>
+  </Tab>
+</Tabs>
+
+## Community vs Enterprise capabilities
+
+### Community (free)
+
+- All outbound network calls are visible in the dashboard
+- Connections are correlated to the workflow step that triggered them
+- A baseline is automatically created from past runs per job
+- Anomalies (new connections not in the baseline) are flagged
+
+### Enterprise
+
+Includes everything in Community, plus:
+
+- **GitHub API call visibility at the job level**: See every HTTPS request made to GitHub APIs, including which specific endpoints were called
+- **`GITHUB_TOKEN` permission recommendations**: Based on the GitHub API calls observed, Harden-Runner recommends the minimum set of `GITHUB_TOKEN` permissions your workflow actually needs
+
+## Common legitimate endpoints
+
+When building your `allowed-endpoints` list, you will typically need to include some of these:
+
+| Endpoint | Purpose |
+|----------|---------|
+| `github.com:443` | Cloning repositories, GitHub Actions checkout |
+| `api.github.com:443` | GitHub API calls (issue comments, releases, etc.) |
+| `registry.npmjs.org:443` | npm package downloads |
+| `pypi.org:443`, `files.pythonhosted.org:443` | Python package downloads |
+| `pkg.go.dev:443`, `proxy.golang.org:443` | Go module downloads |
+| `objects.githubusercontent.com:443` | GitHub release assets and raw content |
+| `docker.io:443`, `registry-1.docker.io:443` | Docker Hub image pulls |
+
+You can add any domain by including it in `allowed-endpoints`, one entry per line in the format `domain:port`.
+
+## Real-world detection: tj-actions/changed-files
+
+In March 2025, the `tj-actions/changed-files` GitHub Action was compromised (CVE-2025-30066). The malicious code attempted to exfiltrate CI/CD secrets by making outbound network calls to an attacker-controlled server — a domain that was not in any existing baselines.
+
+Harden-Runner detected this automatically. Repositories using Harden-Runner with network monitoring saw the unexpected outbound call flagged as an anomaly in the Network Events view. The connection appeared under the step that used `tj-actions/changed-files`, giving teams a precise, step-level indicator of compromise without any manual log analysis.
+
+This is the core value of step-level network correlation: when a third-party action goes rogue, the suspicious traffic is immediately visible and tied to the exact step responsible.

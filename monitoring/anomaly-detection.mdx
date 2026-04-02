@@ -1,0 +1,125 @@
+---
+title: "Anomaly Detection"
+description: "Automatically identify unusual behavior in your CI/CD workflows. Harden-Runner builds a per-job baseline from historical runs and flags any new outbound connections, processes, or file modifications that deviate from it."
+---
+
+Harden-Runner's anomaly detection removes the need to manually review security logs for every workflow run. It builds a baseline from your job's historical behavior and automatically flags anything that deviates from it — so you are alerted to new network destinations, unexpected processes, and file modifications without writing any detection rules.
+
+## How baseline creation and anomaly detection work
+
+<Steps>
+  <Step title="Run your workflow in audit mode">
+    Add Harden-Runner to your workflow with `egress-policy: audit`. Every outbound network connection, process execution, and file write is recorded and sent to the StepSecurity API.
+
+    ```yaml .github/workflows/example.yml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          egress-policy: audit
+    ```
+  </Step>
+  <Step title="Baseline is built automatically">
+    After several runs, Harden-Runner builds a per-job baseline from the outbound network connections observed. The baseline is specific to each job — not shared across jobs or repositories — so normal variation between jobs does not produce false positives.
+
+    You do not need to configure or trigger baseline creation. It happens automatically as your workflow runs.
+  </Step>
+  <Step title="New connections trigger detections">
+    Once a baseline exists, any future outbound connection that was not observed in prior runs triggers an anomaly detection. The new destination is highlighted in the job summary and in the StepSecurity dashboard.
+
+    This fires whether the new connection is malicious or simply a newly added dependency — giving you the opportunity to review and decide whether to add it to your `allowed-endpoints` list.
+  </Step>
+  <Step title="Review and act">
+    Open the security insights link from your workflow log or job summary:
+
+    ```text
+    https://app.stepsecurity.io/github/{owner}/{repo}/actions/runs/{run_id}
+    ```
+
+    The dashboard shows which connections are new relative to the baseline and correlates them to the workflow step that made them. You can then update your `allowed-endpoints` list or investigate further if the connection looks suspicious.
+  </Step>
+</Steps>
+
+## Job summary
+
+At the end of each job, Harden-Runner fetches a Markdown summary from the StepSecurity API and posts it to the GitHub Actions job summary. The summary includes:
+
+- Outbound network connections observed during the run
+- Any anomalies detected relative to the baseline
+- A link to the full security insights view
+
+The summary is fetched from:
+
+```text
+{STEPSECURITY_API_URL}/github/{owner}/{repo}/actions/runs/{run_id}/correlation/{correlation_id}/job-markdown-summary
+```
+
+This gives you inline visibility into security events without leaving GitHub.
+
+## GitHub Checks integration
+
+<Note>
+  GitHub Checks integration is an **Enterprise** feature.
+</Note>
+
+With Enterprise, Harden-Runner creates a GitHub Check on your pull requests and workflow runs. The check behavior is:
+
+- **Passes** if all outbound connections match the established baseline
+- **Fails** if any new outbound connections appear beyond the baseline
+
+This makes anomaly detection part of your CI/CD gate. A new or unexpected network connection causes the check to fail, giving reviewers a clear signal before a PR is merged.
+
+## Alert types
+
+Harden-Runner surfaces three categories of anomalies:
+
+| Alert type | Trigger |
+|------------|---------|
+| New outbound domain | A domain is contacted that was not present in prior runs for this job |
+| New process | A process executes that was not observed in the baseline for this job |
+| File modification outside working directory | A file write occurs outside `GITHUB_WORKSPACE` |
+
+## Real-world detections
+
+<AccordionGroup>
+  <Accordion title="tj-actions/changed-files compromise (CVE-2025-30066)">
+    In March 2025, the `tj-actions/changed-files` action was compromised. The malicious code exfiltrated CI/CD secrets by making outbound network calls to an attacker-controlled server.
+
+    Repositories using Harden-Runner detected this automatically: the attacker's domain appeared as a new outbound connection not present in any prior baseline, triggering an anomaly alert. The connection was correlated to the step using `tj-actions/changed-files`, making the source of the compromise immediately clear.
+
+    See: [Harden-Runner Detected the tj-actions/changed-files compromise](https://www.stepsecurity.io/blog/harden-runner-detection-tj-actions-changed-files-action-is-compromised)
+  </Accordion>
+  <Accordion title="NX Build System malware">
+    A popular NX Build System package was compromised with data-stealing malware. The malware initiated outbound connections to exfiltrate secrets from CI/CD environments.
+
+    Harden-Runner flagged the new outbound destination as an anomaly relative to the established baseline for jobs using the NX package, allowing teams to detect and respond to the compromise before it caused further damage.
+
+    See: [Harden-Runner Detected the NX Build System compromise](https://www.stepsecurity.io/blog/supply-chain-security-alert-popular-nx-build-system-package-compromised-with-data-stealing-malware)
+  </Accordion>
+  <Accordion title="CNCF Backstage Sha1-Hulud attack">
+    A supply chain attack targeting the CNCF Backstage project introduced malicious code that made anomalous outbound network calls during CI/CD runs.
+
+    Harden-Runner's baseline comparison flagged the unexpected network behavior in real time. The anomaly detection gave the Backstage project team visibility into the attack as it was happening, enabling a faster response.
+
+    See: [Harden Runner Detected the Sha1-Hulud Supply Chain Attack in CNCF's Backstage Repository](https://www.stepsecurity.io/blog/how-harden-runner-detected-the-sha1-hulud-supply-chain-attack-in-cncfs-backstage-repository)
+  </Accordion>
+  <Accordion title="Google Flank CI/CD attack">
+    A CI/CD supply chain attack in Google's open-source Flank project was detected when Harden-Runner identified suspicious outbound traffic that deviated from the job's established baseline.
+
+    The step-level correlation provided by Harden-Runner made it possible to trace the anomalous connection back to the specific action responsible, significantly reducing the time to triage.
+
+    See: [Harden-Runner Detected a CI/CD Supply Chain Attack in Google's Open-Source Project Flank](https://www.stepsecurity.io/case-studies/flank)
+  </Accordion>
+  <Accordion title="Microsoft Azure Karpenter Provider">
+    A real-time CI/CD supply chain attack in Microsoft's Azure Karpenter Provider project was detected by Harden-Runner. Anomalous outbound connections were flagged as deviating from the baseline, immediately alerting the team to the compromise.
+
+    See: [Harden-Runner Detected a CI/CD Supply Chain Attack in Microsoft's Open-Source Project Azure Karpenter Provider in Real-Time](https://www.stepsecurity.io/case-studies/azure-karpenter-provider)
+  </Accordion>
+  <Accordion title="Anomalous traffic to api.ipify.org">
+    Harden-Runner detected outbound calls to `api.ipify.org` — a service that returns the caller's public IP address — across multiple customer workflows. This is a technique commonly used by malware to identify the external IP of a compromised host before initiating communication with a command-and-control server.
+
+    Because `api.ipify.org` was not in the baseline for any of the affected jobs, each call triggered an anomaly alert, allowing teams to investigate and identify the compromised dependency.
+
+    See: [Harden-Runner Detected Anomalous Traffic to api.ipify.org Across Multiple Customers](https://www.stepsecurity.io/blog/harden-runner-detects-anomalous-traffic-to-api-ipify-org-across-multiple-customers)
+  </Accordion>
+</AccordionGroup>

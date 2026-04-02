@@ -1,0 +1,93 @@
+---
+title: "Action Inputs Reference"
+description: "Complete reference for all inputs supported by the step-security/harden-runner action."
+---
+
+Use these inputs in the `with:` block of your `step-security/harden-runner` step to control how the action behaves in each job.
+
+## Inputs
+
+<ParamField body="egress-policy" type="string" default="block">
+  Policy for outbound network traffic. Accepted values are `audit` and `block`.
+
+  - **`audit`** — Monitor and log all outbound connections without blocking any traffic. Use this mode to build a baseline before switching to `block`.
+  - **`block`** — Deny all outbound connections except those listed in `allowed-endpoints`. This is the default and most restrictive mode.
+</ParamField>
+
+<ParamField body="allowed-endpoints" type="string" default="">
+  Space-separated list of `domain:port` pairs that are allowed when `egress-policy` is set to `block`. Any endpoint not in this list will be blocked.
+
+  ```yaml
+  allowed-endpoints: >
+    api.github.com:443
+    github.com:443
+    registry.npmjs.org:443
+  ```
+
+  Use the YAML block scalar (`>`) to list multiple endpoints across several lines for readability. Leave empty to start building a baseline in `audit` mode.
+</ParamField>
+
+<Warning>
+  If `egress-policy` is set to `block` and `allowed-endpoints` is empty, **no outbound traffic will be permitted** for any job step. Ensure you add all required endpoints before switching to `block` mode.
+</Warning>
+
+<ParamField body="token" type="string" default="${{ github.token }}">
+  GitHub token used to avoid rate limiting when the action downloads the Harden-Runner agent. Defaults to the built-in `github.token` for the workflow run. You only need to override this if you require a token with different permissions or a higher rate limit.
+</ParamField>
+
+<ParamField body="disable-telemetry" type="boolean" default="false">
+  Set to `true` to prevent the action from sending telemetry data to the StepSecurity API.
+
+  This input is only effective when `egress-policy` is set to `block`. When `egress-policy` is `audit`, telemetry is always sent regardless of this setting.
+</ParamField>
+
+<ParamField body="disable-sudo" type="boolean" default="false" deprecated>
+  Set to `true` to remove sudo access from the runner account during the job.
+</ParamField>
+
+<Note>
+  `disable-sudo` is deprecated and will be removed in a future version. Use `disable-sudo-and-containers` instead.
+</Note>
+
+<ParamField body="disable-sudo-and-containers" type="boolean" default="false">
+  Set to `true` to disable both sudo access and container access for the runner account. This replaces the deprecated `disable-sudo` input and provides broader privilege reduction.
+</ParamField>
+
+<ParamField body="disable-file-monitoring" type="boolean" default="false">
+  Set to `true` to turn off file write monitoring. When disabled, the action will not track or report files written during the build process.
+</ParamField>
+
+<ParamField body="policy" type="string" default="">
+  Name of a policy to load from the StepSecurity policy store. When set, the action fetches the named policy and merges its configuration (allowed endpoints, egress policy, sudo settings, etc.) with any locally provided inputs.
+
+  Fetching a policy requires OIDC authentication. Add `id-token: write` to your job permissions when using this input.
+
+  ```yaml
+  permissions:
+    id-token: write
+  ```
+
+  If the ID token is unavailable, the job will fail with an explicit error message. If the policy is not found or an unexpected error occurs, the action falls back to `egress-policy: audit`.
+</ParamField>
+
+## Example
+
+The following workflow step shows all available inputs with their defaults:
+
+```yaml
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: block
+      allowed-endpoints: >
+        api.github.com:443
+        github.com:443
+        registry.npmjs.org:443
+      token: ${{ github.token }}
+      disable-sudo: false
+      disable-sudo-and-containers: false
+      disable-file-monitoring: false
+      disable-telemetry: false
+      policy: ""
+```

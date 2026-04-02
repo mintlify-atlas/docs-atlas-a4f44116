@@ -1,0 +1,94 @@
+---
+title: "Policy Store"
+description: "Centrally manage security policies across multiple workflows using the StepSecurity policy store."
+---
+
+The policy store lets you define a named security policy once in the StepSecurity dashboard and apply it to any number of workflows by referencing the policy name. This is especially useful for organizations that want to enforce a consistent baseline across many repositories without duplicating configuration in every workflow file.
+
+<Note>
+  The policy store is an Enterprise feature and requires a StepSecurity subscription.
+</Note>
+
+<ParamField path="policy" type="string" default="">
+  Name of the policy to fetch from the StepSecurity policy store. When set, the remote policy is merged with any local configuration in the workflow file.
+</ParamField>
+
+## How it works
+
+When you provide a `policy` name, Harden-Runner fetches the policy from the StepSecurity API at the start of the job using an OIDC token. The remote policy is then merged with the local configuration you have set in your workflow:
+
+- If `allowed-endpoints` is empty in your workflow, the remote policy's `allowed_endpoints` value is used.
+- Remote policy values for `egress_policy`, `disable_sudo`, `disable_sudo_and_containers`, and `disable_file_monitoring` always override their local counterparts when present in the remote policy.
+
+## Setup
+
+<Steps>
+  <Step title="Add id-token permission">
+    The action uses OIDC to authenticate with the StepSecurity API. Add `id-token: write` to the permissions block for the job that uses Harden-Runner.
+
+    ```yaml
+    jobs:
+      build:
+        permissions:
+          id-token: write
+          contents: read
+    ```
+  </Step>
+  <Step title="Set the policy input">
+    Reference your policy by name in the Harden-Runner step.
+
+    ```yaml
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          policy: my-org-policy
+    ```
+  </Step>
+  <Step title="Create the policy in the dashboard">
+    Log in to the StepSecurity dashboard and create a named policy. Configure the `egress_policy`, `allowed_endpoints`, and any disable options you want to enforce centrally.
+  </Step>
+</Steps>
+
+## Permissions requirement
+
+<Warning>
+  The `id-token: write` permission is required. If the OIDC token cannot be obtained, Harden-Runner fails the job with the message:
+
+  ```
+  Policy store requires id-token write permission as it uses OIDC to fetch the policy
+  from StepSecurity API. Please add "id-token: write" to your job permissions.
+  ```
+</Warning>
+
+## Full example
+
+```yaml
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@v2
+        with:
+          policy: my-org-policy
+
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Build
+        run: npm ci && npm run build
+```
+
+## Error handling
+
+| Condition | Behavior |
+|---|---|
+| `id-token: write` permission missing | Job fails immediately with a descriptive error message |
+| Policy name not found (HTTP 4xx) | Action logs `Policy not found` and continues |
+| Unexpected error (HTTP 5xx or network failure) | Action logs the error and falls back to `egress-policy: audit` |
+
+The retry logic in the policy fetch makes up to three attempts with a one-second delay between each attempt before treating the request as failed.

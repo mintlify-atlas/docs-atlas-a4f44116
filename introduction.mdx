@@ -1,0 +1,95 @@
+---
+title: "Introduction"
+description: "Harden-Runner brings runtime security monitoring to GitHub Actions — detecting supply chain attacks, blocking unauthorized network egress, and giving you full visibility into every step of your CI/CD pipeline."
+---
+
+## The problem: unmonitored CI/CD runners
+
+Corporate laptops and production servers typically have robust security monitoring in place — endpoint detection and response (EDR) tools, network controls, and audit logs. CI/CD runners are a glaring exception.
+
+Runners have access to your most sensitive assets:
+
+- Cloud provider credentials and deployment tokens
+- Code signing keys and package publishing secrets
+- Source code and build artifacts
+
+Yet they are ephemeral, rebuilt from scratch for every job, and invisible to traditional security tools. Attackers have exploited this gap in high-profile supply chain attacks:
+
+- **SolarWinds (2020)** — attackers injected malicious code into the build pipeline, shipping backdoored software to thousands of customers
+- **Codecov (2021)** — a compromised CI script exfiltrated secrets from every repository that ran it
+
+Traditional EDR solutions cannot handle the ephemeral lifecycle of CI/CD runners, and they have no context to correlate an outbound network call to the specific workflow step that made it. Harden-Runner was built to solve exactly this problem.
+
+## What Harden-Runner does
+
+Harden-Runner is a GitHub Action that installs a lightweight security agent on the runner at the start of each job. The agent monitors outbound network traffic, file system writes, and process execution — and maps every event to the exact step, job, and workflow where it occurred.
+
+You add a single step to your workflow:
+
+```yaml
+steps:
+  - name: Harden Runner
+    uses: step-security/harden-runner@v2
+    with:
+      egress-policy: audit
+```
+
+After the job completes, Harden-Runner posts a link to a security insights dashboard where you can review everything that happened during the run.
+
+<Note>
+  Harden-Runner is open source (Apache 2.0) for public repositories. The community tier agent for Linux is available at [github.com/step-security/agent](https://github.com/step-security/agent). Agents for Windows, macOS, and enterprise features are closed-source.
+</Note>
+
+## Key capabilities
+
+### Community tier (free)
+
+The community tier is free for public repositories and provides:
+
+- **CI/CD-aware event correlation** — every outbound network connection, file operation, and process execution is mapped to the exact step, job, and workflow where it occurs
+- **Automated baseline creation** — Harden-Runner builds a baseline for each job based on past outbound network connections
+- **Anomaly detection** — once a baseline exists, any outbound call outside the baseline triggers a detection
+- **Network egress blocking** — use `egress-policy: block` with an `allowed-endpoints` list to prevent unauthorized data exfiltration
+- **Source code modification detection** — monitor and alert on unauthorized changes to source code during the pipeline
+
+### Enterprise tier (paid)
+
+The enterprise tier includes everything in the community tier, plus:
+
+- **Private repository support** — extend monitoring to private GitHub repositories
+- **Self-hosted runner support** — apply security controls to self-hosted GitHub Actions runners
+- **GitHub Checks integration** — the check passes when the baseline is unchanged; it fails and shows new connections when the baseline changes
+- **GitHub API call visibility** — view all HTTPS requests to GitHub APIs at the job level
+- **Minimum `GITHUB_TOKEN` permissions** — monitor GitHub API calls to recommend the least-privilege permissions your workflow actually needs
+- **File write visibility** — see the name and path of every file written during the build, correlated to the process that wrote it
+- **Process name and argument visibility** — monitor every process executed during the build and navigate the full process tree
+
+## Real-world detections
+
+Harden-Runner has detected real supply chain attacks in production:
+
+- **[tj-actions/changed-files compromise](https://www.stepsecurity.io/blog/harden-runner-detection-tj-actions-changed-files-action-is-compromised)** (CVE-2025-30066) — detected anomalous network behavior from a compromised third-party action before widespread impact
+- **[NX Build System compromise](https://www.stepsecurity.io/blog/supply-chain-security-alert-popular-nx-build-system-package-compromised-with-data-stealing-malware)** — caught data-stealing malware injected into a popular build tool package
+- **[CNCF Backstage Sha1-Hulud attack](https://www.stepsecurity.io/blog/how-harden-runner-detected-the-sha1-hulud-supply-chain-attack-in-cncfs-backstage-repository)** — identified anomalous network behavior in real time
+- **[Google Flank CI/CD attack](https://www.stepsecurity.io/case-studies/flank)** — correlated suspicious outbound traffic to the exact compromised step
+- **[Microsoft Azure Karpenter Provider attack](https://www.stepsecurity.io/case-studies/azure-karpenter-provider)** — detected a CI/CD supply chain attack in real time
+- **[Anomalous traffic to api.ipify.org](https://www.stepsecurity.io/blog/harden-runner-detects-anomalous-traffic-to-api-ipify-org-across-multiple-customers)** — flagged unusual IP-lookup calls across multiple customers simultaneously
+
+Harden-Runner secures over **18 million CI/CD workflow runs every week** across more than 11,000 open-source projects and enterprises, including Microsoft, Google, CISA, Kubernetes, and Node.js.
+
+## Explore the documentation
+
+<CardGroup cols={2}>
+  <Card title="Quick start" icon="rocket" href="/quickstart">
+    Add Harden-Runner to your workflow and get security insights in minutes.
+  </Card>
+  <Card title="How it works" icon="shield-halved" href="/how-it-works">
+    Understand the architecture behind GitHub-hosted and self-hosted runner protection.
+  </Card>
+  <Card title="Action inputs reference" icon="sliders" href="/reference/action-inputs">
+    Full reference for all configuration inputs supported by the action.
+  </Card>
+  <Card title="Community vs enterprise" icon="chart-bar" href="/reference/community-vs-enterprise">
+    Compare free and paid tier features to choose the right plan.
+  </Card>
+</CardGroup>
